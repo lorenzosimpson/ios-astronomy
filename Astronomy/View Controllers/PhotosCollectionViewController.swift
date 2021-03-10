@@ -10,6 +10,8 @@ import UIKit
 
 class PhotosCollectionViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
     
+    var cache = Cache<Int, Data>()
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -66,6 +68,10 @@ class PhotosCollectionViewController: UIViewController, UICollectionViewDataSour
    
         let photoReference = photoReferences[indexPath.item]
         
+        if let imageData = cache.value(for: photoReference.id) {
+            cell.imageView.image = UIImage(data: imageData)
+        }
+        
         // TODO: Implement image loading here
         let url = photoReference.imageURL.usingHTTPS!
         let request = URLRequest(url: url)
@@ -84,6 +90,7 @@ class PhotosCollectionViewController: UIViewController, UICollectionViewDataSour
                 guard self.collectionView.indexPath(for: cell) == indexPath else { return }
                 cell.imageView.image = UIImage(data: data)
             }
+            self.cache.cache(with: data, for: photoReference.id)
         }.resume()
     }
     
