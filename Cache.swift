@@ -11,6 +11,7 @@ import Foundation
 class Cache<Key: Hashable, Value> {
     private var storage: [Key : Value] = [:]
     private var queue = DispatchQueue(label: "SerialDispatchQueue")
+
     
     func cache(with value: Value, for key: Key) {
         queue.sync {
@@ -18,14 +19,16 @@ class Cache<Key: Hashable, Value> {
         }
     }
     
-    func value(for key: Key) -> Value? {
-        queue.sync {
-            guard let val = storage[key] else {
-                print("No value for key \(key)")
-                return nil
+    subscript(_ key: Key) -> Value? {
+            get {
+                queue.sync {
+                    if let value = storage[key] {
+                        return value
+                    } else {
+                        return nil
+                    }
+                }
             }
-            return val
         }
-    }
     
 }

@@ -11,6 +11,8 @@ import UIKit
 class PhotosCollectionViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
     
     var cache = Cache<Int, Data>()
+    private var photoFetchQueue = OperationQueue()
+    private var fetchDictionary: [Int: FetchPhotoOperation] = [:]
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -43,6 +45,14 @@ class PhotosCollectionViewController: UIViewController, UICollectionViewDataSour
         return cell
     }
     
+    func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+        if let cell = cell as? ImageCollectionViewCell {
+            let task = fetchDictionary[cell.photoID]
+            print("Task being cancelled")
+            task?.cancel()
+        }
+    }
+    
     // Make collection view cells fill as much available width as possible
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
         let flowLayout = collectionViewLayout as! UICollectionViewFlowLayout
@@ -67,31 +77,39 @@ class PhotosCollectionViewController: UIViewController, UICollectionViewDataSour
     private func loadImage(forCell cell: ImageCollectionViewCell, forItemAt indexPath: IndexPath) {
    
         let photoReference = photoReferences[indexPath.item]
+        let photoID = photoReference.id
+        cell.photoID = photoID
         
-        if let imageData = cache.value(for: photoReference.id) {
+        if let imageData = cache[photoID] {
+            print("Image loaded from cache")
             cell.imageView.image = UIImage(data: imageData)
         }
         
-        // TODO: Implement image loading here
-        let url = photoReference.imageURL.usingHTTPS!
-        let request = URLRequest(url: url)
+        let fetchPhotoOperation = FetchPhotoOperation(marsPhotoReference: photoReference)
         
-        URLSession.shared.dataTask(with: request) { (data, _, error) in
-            if let error = error {
-                print("Error in loadImage function, \(error)")
-                return
+        let storeCacheOperation = BlockOperation {
+            print("Store cache operation called")
+            if let data = fetchPhotoOperation.imageData {
+                self.cache.cache(with: data, for: photoID)
             }
-            guard let data = data else {
-                print("No data from response")
-                return
+        }
+        let checkReuseOperation = BlockOperation {
+            print("Check cache operation called")
+            if let data = fetchPhotoOperation.imageData {
+                DispatchQueue.main.async {
+                    guard cell.photoID == photoID else { return }
+                    cell.imageView.image = UIImage(data: data)
+                }
             }
-           
-            DispatchQueue.main.async {
-                guard self.collectionView.indexPath(for: cell) == indexPath else { return }
-                cell.imageView.image = UIImage(data: data)
-            }
-            self.cache.cache(with: data, for: photoReference.id)
-        }.resume()
+            
+        }
+        storeCacheOperation.addDependency(fetchPhotoOperation)
+        checkReuseOperation.addDependency(fetchPhotoOperation)
+        
+        photoFetchQueue.addOperations([fetchPhotoOperation,
+                                       storeCacheOperation,
+                                       checkReuseOperation], waitUntilFinished: false)
+        fetchDictionary[photoID] = fetchPhotoOperation
     }
     
     // Properties
